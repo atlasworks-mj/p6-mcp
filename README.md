@@ -109,6 +109,20 @@ read-only SQL.
 This server has been built against SQL Server-backed P6 data. Other P6 database
 backends are not currently supported.
 
+### P6 edition and support note
+
+This implementation targets P6 Professional databases with a SQL Server backend.
+It does not use the P6 EPPM REST API or EPPM Extended Schema.
+
+P6 EPPM deployments may be better served by Oracle's documented REST API or
+Extended Schema reporting views, and a future EPPM-oriented implementation could
+adapt these MCP tools around those interfaces.
+
+Direct SQL access to the native P6 Professional schema is useful for local
+reporting and analysis, but it may not be an Oracle-supported integration path.
+Use only authorized, read-only database credentials and review your own Oracle
+license, hosting, and support terms before use.
+
 ## Installation
 
 ### 1. Create a read-only SQL Server login
@@ -133,7 +147,7 @@ boundary.
 
 ```bash
 git clone https://github.com/atlasworks-mj/p6-mcp.git
-cd p6mcp
+cd p6-mcp
 python -m venv venv
 ```
 
