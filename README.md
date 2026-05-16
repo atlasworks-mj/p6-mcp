@@ -218,8 +218,8 @@ Example:
 {
   "mcpServers": {
     "p6": {
-      "command": "C:/absolute/path/to/p6mcp/venv/Scripts/python.exe",
-      "args": ["C:/absolute/path/to/p6mcp/server.py"]
+      "command": "C:/absolute/path/to/p6-mcp/venv/Scripts/python.exe",
+      "args": ["C:/absolute/path/to/p6-mcp/server.py"]
     }
   }
 }
@@ -235,8 +235,8 @@ Add a `.mcp.json` file in your working project:
 {
   "mcpServers": {
     "p6": {
-      "command": "C:/absolute/path/to/p6mcp/venv/Scripts/python.exe",
-      "args": ["C:/absolute/path/to/p6mcp/server.py"]
+      "command": "C:/absolute/path/to/p6-mcp/venv/Scripts/python.exe",
+      "args": ["C:/absolute/path/to/p6-mcp/server.py"]
     }
   }
 }
@@ -245,7 +245,7 @@ Add a `.mcp.json` file in your working project:
 Or use the CLI:
 
 ```bash
-claude mcp add p6 C:/absolute/path/to/p6mcp/venv/Scripts/python.exe C:/absolute/path/to/p6mcp/server.py
+claude mcp add p6 C:/absolute/path/to/p6-mcp/venv/Scripts/python.exe C:/absolute/path/to/p6-mcp/server.py
 ```
 
 ### Cursor
@@ -256,8 +256,8 @@ Add to `.cursor/mcp.json`:
 {
   "mcpServers": {
     "p6": {
-      "command": "C:/absolute/path/to/p6mcp/venv/Scripts/python.exe",
-      "args": ["C:/absolute/path/to/p6mcp/server.py"]
+      "command": "C:/absolute/path/to/p6-mcp/venv/Scripts/python.exe",
+      "args": ["C:/absolute/path/to/p6-mcp/server.py"]
     }
   }
 }
@@ -271,8 +271,8 @@ Add to `.vscode/mcp.json`:
 {
   "servers": {
     "p6": {
-      "command": "C:/absolute/path/to/p6mcp/venv/Scripts/python.exe",
-      "args": ["C:/absolute/path/to/p6mcp/server.py"]
+      "command": "C:/absolute/path/to/p6-mcp/venv/Scripts/python.exe",
+      "args": ["C:/absolute/path/to/p6-mcp/server.py"]
     }
   }
 }
@@ -281,7 +281,7 @@ Add to `.vscode/mcp.json`:
 ### Codex CLI
 
 ```bash
-codex mcp add p6 C:/absolute/path/to/p6mcp/venv/Scripts/python.exe C:/absolute/path/to/p6mcp/server.py
+codex mcp add p6 C:/absolute/path/to/p6-mcp/venv/Scripts/python.exe C:/absolute/path/to/p6-mcp/server.py
 ```
 
 You can verify the server is configured with:
@@ -299,8 +299,8 @@ folder you open as your Codex project or workspace:
 {
   "mcpServers": {
     "p6": {
-      "command": "C:/absolute/path/to/p6mcp/venv/Scripts/python.exe",
-      "args": ["C:/absolute/path/to/p6mcp/server.py"]
+      "command": "C:/absolute/path/to/p6-mcp/venv/Scripts/python.exe",
+      "args": ["C:/absolute/path/to/p6-mcp/server.py"]
     }
   }
 }
@@ -314,7 +314,28 @@ Keep `.mcp.json` local. It can contain machine-specific paths, so this
 repository's `.gitignore` excludes it by default.
 
 On macOS and Linux, use the virtual environment Python at
-`/absolute/path/to/p6mcp/venv/bin/python`.
+`/absolute/path/to/p6-mcp/venv/bin/python`.
+
+### Optional Codex Skill
+
+This repository includes an optional Codex skill at `skills/p6-mcp`. The skill
+teaches Codex how to choose between the P6 MCP tools, handle path-analysis
+caveats, and answer schedule questions with P6-aware terminology.
+
+To install it locally on Windows PowerShell:
+
+```powershell
+Copy-Item -Recurse -Force skills\p6-mcp "$env:USERPROFILE\.codex\skills\"
+```
+
+On macOS and Linux:
+
+```bash
+mkdir -p ~/.codex/skills
+cp -R skills/p6-mcp ~/.codex/skills/
+```
+
+Reload Codex or start a new thread after installing the skill.
 
 ### Other MCP Clients
 
@@ -389,7 +410,7 @@ trusted local clients and least-privilege credentials.
 ## Project Structure
 
 ```text
-p6mcp/
+p6-mcp/
 |-- server.py                  # FastMCP server and tool registration
 |-- db.py                      # SQL Server connection and query helpers
 |-- tools/
@@ -410,6 +431,8 @@ p6mcp/
 |   |-- resources.py           # Resources, costs, cash flow
 |   |-- calendars.py           # Calendar usage and detail
 |   `-- query.py               # Capped read-only SQL tool
+|-- skills/
+|   `-- p6-mcp/                # Optional Codex skill for using these tools
 |-- requirements.txt
 |-- .env.example
 |-- LICENSE

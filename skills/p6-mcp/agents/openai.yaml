@@ -1,0 +1,4 @@
+interface:
+  display_name: "P6 MCP"
+  short_description: "Use the P6 MCP server for Primavera P6 schedule analysis."
+  default_prompt: "Use the P6 MCP skill to answer a Primavera P6 schedule question with the available MCP tools."
