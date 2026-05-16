@@ -66,7 +66,7 @@ read-only SQL.
 | `get_udf_usage` | Show activities with matching task UDF assignments. |
 | `search_activities` | Search activities by core fields, codes, UDFs, and optional notes/steps. |
 | `get_critical_path` | Return critical activities using the project's P6 critical path setting. |
-| `get_driving_path` | Return the project-level P6 driving/longest path where P6 path data exists. |
+| `get_driving_path` | Return the project-level P6 driving/longest path activity set where P6 path data exists. |
 | `get_longest_path` | Return P6-calculated longest path data using driving path flag, float path metadata, then minimum-float fallback. |
 | `get_multiple_float_paths` | Return P6 multiple float path results grouped by `float_path` and `float_path_order`. |
 | `get_near_critical_paths` | Return near-critical activities grouped by P6 float path. |
@@ -379,6 +379,10 @@ trusted local clients and least-privilege credentials.
 - Longest path tools prefer P6-calculated fields where present, then use
   documented fallbacks. Path tools return truncation/completeness metadata when
   a row or depth guardrail prevents returning the full path.
+- P6 `driving_path_flag` identifies a calculated path activity set. When P6 has
+  not populated `float_path_order`, adjacent date-sorted rows may not be
+  directly linked. Use target-specific driving traces for "what is currently
+  driving this milestone/activity?" questions.
 - Driving predecessor/path tools infer relationship tightness from predecessor
   endpoint dates, successor endpoint dates, relationship type, lag, and parsed
   work calendars. P6 does not expose a relationship-level driving flag in

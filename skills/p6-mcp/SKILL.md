@@ -32,6 +32,10 @@ never attempt to create, update, delete, or repair P6 records.
    - Critical path should follow the project's P6 critical path setting.
    - Longest path and multiple float paths should prefer P6-calculated fields
      when populated.
+   - Treat `get_longest_path` and `get_driving_path` as P6-calculated path
+     activity sets. If the user asks what is currently driving a specific
+     milestone/activity, prefer `get_driving_path_to_activity` with
+     `include_completed=false`.
    - Driving predecessor/path tools infer relationship tightness from dates,
      lags, relationship types, and calendars; explain that this is inference
      when P6 does not expose a relationship-level driving flag.
@@ -41,8 +45,9 @@ never attempt to create, update, delete, or repair P6 records.
      when available. Use `project_id` in tool calls, but treat it as a
      secondary technical identifier in user-facing answers.
    - Report caveats for missing float/path/date/resource/cost data.
-   - Sort path results chronologically by start/date order, using activity ID or
-     name only as a tie-breaker.
+   - Sort path results chronologically by start/date order. For target-specific
+     traces, preserve relationship/depth order when dates tie, then use activity
+     ID or name as a final tie-breaker.
    - Blend scheduling theory with field usefulness: explain critical, longest,
      float, and driving concepts when they matter, then translate them into what
      the result means for coordination, risk, delay, sequencing, or next review.
@@ -50,6 +55,10 @@ never attempt to create, update, delete, or repair P6 records.
      user asks why something is happening. Walk the logic back to current work
      where possible, and include completed history when it helps explain how the
      schedule arrived there.
+   - If a current-driver trace stops at a not-started/in-progress activity but a
+     P6 path set shows earlier completed or odd activities, rerun with
+     `include_completed=true` and explain the difference as current control
+     versus historical/model logic.
    - Distinguish data facts from schedule judgment and avoid academic detail
      that does not change the practical answer.
 

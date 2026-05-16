@@ -60,12 +60,12 @@ related but not identical concepts.
 | Question | Tool | Notes |
 |---|---|---|
 | "Critical path" | `get_critical_path` | Follows project P6 setting. If P6 uses total float, critical is threshold-based; if driving path, use P6 driving path flag. |
-| "Longest path" | `get_longest_path` | Prefer P6 longest/driving fields and float path metadata; fallbacks should be described. |
+| "Longest path" | `get_longest_path` | Prefer P6 longest/driving fields and float path metadata; treat P6 flag-only results as a calculated activity set, not necessarily a row-by-row logic chain. |
 | "Multiple float paths" | `get_multiple_float_paths` | Only meaningful when P6 calculated multiple float paths. |
 | "Near critical" | `get_near_critical_paths` | Use float-path grouping where available. |
 | "Path to milestone/activity" | `get_path_to_milestone` | Use for a broad predecessor trace to a target. |
 | "What drives this activity?" | `get_driving_predecessors` | Returns candidate drivers using calendar-aware relationship gaps. |
-| "Driving path to this activity" | `get_driving_path_to_activity` | Recursively traces likely drivers back from the target. |
+| "Driving path to this activity" | `get_driving_path_to_activity` | Recursively traces likely drivers back from the target. Use `include_completed=false` for the current driver chain; rerun with `include_completed=true` to explain historical or out-of-sequence bridges. |
 
 Response pattern for path questions:
 
@@ -79,8 +79,20 @@ Response pattern for path questions:
    should review next.
 6. Check trace completion metadata. If a row/depth limit stopped the chain,
    continue the trace or label the answer incomplete.
-7. If ordering matters, sort by start/finish dates, then activity ID/name as a
-   tie-breaker.
+7. If ordering matters, sort by start/finish dates. For target-specific traces,
+   preserve relationship/depth order when dates tie, then use activity ID/name
+   as a final tie-breaker.
+
+Routing note:
+
+- `get_driving_path` and `get_longest_path` expose P6-calculated path membership
+  from `TASK.driving_path_flag` or `TASK.float_path`. In flag-only schedules,
+  adjacent date-sorted rows may not be directly linked.
+- For "what is currently driving this milestone/activity?", prefer
+  `get_driving_path_to_activity(..., include_completed=false)`.
+- If a P6 path set includes an odd completed or out-of-sequence activity, rerun
+  the same target trace with `include_completed=true` and explain current
+  control separately from historical/model logic.
 
 ## Baselines, Updates, And Change
 

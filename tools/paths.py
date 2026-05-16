@@ -65,8 +65,14 @@ def _schedule_start_sort_value(row: dict) -> datetime:
 
 
 def _schedule_path_sort_key(row: dict) -> tuple:
+    depth = row.get("depth_from_target")
+    try:
+        depth_sort = -int(depth) if depth is not None else 0
+    except (TypeError, ValueError):
+        depth_sort = 0
     return (
         _schedule_start_sort_value(row),
+        depth_sort,
         row.get("task_code") or "",
         row.get("task_name") or "",
     )
@@ -873,6 +879,15 @@ def get_longest_path(
             "No P6 driving_path_flag or float_path data was found; this is a minimum-total-float "
             "activity set, not a P6-calculated path."
         )
+    path_continuity_note = None
+    if method == "driving_path_flag" and missing_order_count:
+        path_continuity_note = (
+            "P6 driving_path_flag identifies a calculated path activity set, not a guaranteed "
+            "row-by-row logic chain. Because float_path_order is not populated, adjacent rows are "
+            "date-sorted for readability and may not be directly linked. For a target-specific "
+            "current driver chain, use get_driving_path_to_activity with include_completed=false; "
+            "rerun with include_completed=true when historical or out-of-sequence logic needs review."
+        )
     is_truncated = available_activity_count > len(rows)
     limit_note = None
     if is_truncated:
@@ -887,6 +902,7 @@ def get_longest_path(
         "source_confidence": confidence,
         "source_note": fallback_note,
         "ordering_note": ordering_note,
+        "path_continuity_note": path_continuity_note,
         "include_completed": include_completed,
         "activity_count": len(rows),
         "returned_activity_count": len(rows),
@@ -1239,7 +1255,7 @@ def get_path_to_milestone(
         "max_depth_nodes": max_depth_nodes[:20],
         "truncation_note": truncation_note,
         "target_included_in_path": False,
-        "sort_basis": "schedule_start_then_activity_code",
+        "sort_basis": "schedule_start_then_depth_then_activity_code",
         "path": sorted(path_rows, key=_schedule_path_sort_key),
     }
 
@@ -1503,7 +1519,7 @@ def get_driving_path_to_activity(
         "truncated_by_row_limit": truncated_by_row_limit,
         "truncated_by_depth": bool(max_depth_nodes),
         "unexpanded_queue_count": len(queue),
-        "sort_basis": "schedule_start_then_activity_code",
+        "sort_basis": "schedule_start_then_depth_then_activity_code",
         "terminal_nodes": terminal_nodes,
         "max_depth_nodes": max_depth_nodes[:20],
         "truncation_note": truncation_note,
