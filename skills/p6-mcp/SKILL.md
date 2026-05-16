@@ -31,12 +31,18 @@ never attempt to create, update, delete, or repair P6 records.
      lags, relationship types, and calendars; explain that this is inference
      when P6 does not expose a relationship-level driving flag.
 
-4. Answer like a scheduler.
-   - Include project name/code or `project_id` when useful.
+4. Answer for real-world schedule use.
+   - Always reference the project name, and include project code/update label
+     when available. Use `project_id` in tool calls, but treat it as a
+     secondary technical identifier in user-facing answers.
    - Report caveats for missing float/path/date/resource/cost data.
    - Sort path results chronologically by start/date order, using activity ID or
      name only as a tie-breaker.
-   - Distinguish data facts from schedule judgment.
+   - Blend scheduling theory with field usefulness: explain critical, longest,
+     float, and driving concepts when they matter, then translate them into what
+     the result means for coordination, risk, delay, sequencing, or next review.
+   - Distinguish data facts from schedule judgment and avoid academic detail
+     that does not change the practical answer.
 
 ## Frequent Tool Choices
 
