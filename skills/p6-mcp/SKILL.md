@@ -20,8 +20,13 @@ never attempt to create, update, delete, or repair P6 records.
    - Use structured tools before `query_schedule`.
    - Use `query_schedule` only for read-only SELECT questions not covered by a
      dedicated tool.
-   - Keep `top_n` or result limits bounded unless the user explicitly needs a
-     broad extract.
+   - Treat limits differently by question type: rankings, samples, and broad
+     extracts can be capped; causal chains, path traces, and "what is driving
+     this?" answers should be complete enough to tell the whole schedule story.
+   - For path/driver questions, check `trace_complete`, `is_truncated`,
+     `truncation_note`, and returned-vs-available counts. If a trace is clipped,
+     continue with higher `top_n`/`max_depth` or state clearly that the result is
+     incomplete.
 
 3. Preserve P6 semantics.
    - Critical path should follow the project's P6 critical path setting.
@@ -41,6 +46,10 @@ never attempt to create, update, delete, or repair P6 records.
    - Blend scheduling theory with field usefulness: explain critical, longest,
      float, and driving concepts when they matter, then translate them into what
      the result means for coordination, risk, delay, sequencing, or next review.
+   - Prefer explanatory narratives over leaderboard-style summaries when the
+     user asks why something is happening. Walk the logic back to current work
+     where possible, and include completed history when it helps explain how the
+     schedule arrived there.
    - Distinguish data facts from schedule judgment and avoid academic detail
      that does not change the practical answer.
 

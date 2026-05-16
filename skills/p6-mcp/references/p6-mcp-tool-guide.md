@@ -14,8 +14,32 @@
 - Call out when a result depends on populated P6-calculated fields such as
   critical flags, driving path flags, float paths, early/late dates, resource
   assignments, or cost records.
+- Do not let row caps turn a causal explanation into a partial answer. `top_n`
+  is appropriate for ranked lists, samples, and broad extracts. For path,
+  driver, baseline narrative, and "why did this happen?" questions, use enough
+  depth and rows to tell the full story, and check completion metadata before
+  answering.
 - For P6 Professional SQL Server, this MCP reads the native database schema.
   EPPM/OPC implementations may require separate API-oriented tools.
+
+## Completeness Over Top-N
+
+Use caps as guardrails, not as the shape of the answer.
+
+- For causal chains and paths, prefer `get_driving_path_to_activity`,
+  `get_path_to_milestone`, `get_longest_path`, or `get_multiple_float_paths`
+  with enough `top_n`, `top_n_per_path`, and `max_depth` to reach a natural
+  stopping point.
+- Check `trace_complete`, `truncated_by_row_limit`, `truncated_by_depth`,
+  `truncation_note`, `is_truncated`, `returned_activity_count`, and
+  `available_activity_count` where present.
+- If a chain is incomplete, do not present it as the full driver/path. Re-query
+  with a higher limit when practical, or explicitly say where the trace stopped.
+- For "what is driving X?", walk back to the active/current work when answering
+  remaining-work questions. If the user asks for history or cause, include
+  completed predecessors and actual dates to explain how the schedule got there.
+- For broad diagnostics and comparisons, summarize the most important items but
+  say when lists are representative samples rather than the entire population.
 
 ## Start Here
 
@@ -53,7 +77,9 @@ Response pattern for path questions:
 5. Translate the path into practical meaning: what is actually controlling the
    work, where coordination risk sits, and what a scheduler or project team
    should review next.
-6. If ordering matters, sort by start/finish dates, then activity ID/name as a
+6. Check trace completion metadata. If a row/depth limit stopped the chain,
+   continue the trace or label the answer incomplete.
+7. If ordering matters, sort by start/finish dates, then activity ID/name as a
    tie-breaker.
 
 ## Baselines, Updates, And Change
@@ -109,7 +135,8 @@ Use `query_schedule` only when:
 
 - The question cannot be answered with a dedicated tool.
 - The SQL is a single `SELECT` or `WITH ... SELECT`.
-- The result can be reasonably capped.
+- The result can be reasonably capped without distorting the answer, or the
+  answer clearly labels the result as a sample.
 
 Never use or suggest `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `CREATE`,
 `EXEC`, `MERGE`, `GRANT`, `REVOKE`, `DBCC`, `BACKUP`, `RESTORE`, `XP_CMDSHELL`,
@@ -136,9 +163,12 @@ For diagnostics:
 For path analysis:
 
 - State target and path basis.
-- Show the path in chronological order.
+- Show the path in chronological order and trace it to a natural starting point,
+  current active work, or a clearly stated data/logic boundary.
 - Include dates, relationship types/lags, and float/gap context.
 - Explain the real-world scheduling meaning before going deep on theory.
+- State whether the trace is complete. If it is not complete, explain where and
+  why it stopped.
 
 For comparisons:
 

@@ -20,6 +20,10 @@ def _limit(value: int, default: int = 200, maximum: int = 500) -> int:
         return default
 
 
+def _chain_limit(value: int, default: int = 1000, maximum: int = 5000) -> int:
+    return _limit(value, default=default, maximum=maximum)
+
+
 def _status_clause(include_completed: bool) -> str:
     return "" if include_completed else "AND t.status_code <> 'TK_Complete'"
 
@@ -138,6 +142,24 @@ def _path_select() -> str:
             t.target_start_date,
             t.task_code
     """
+
+
+def _path_count(
+    project_id: int,
+    task_type_clause: str,
+    status_clause: str,
+    extra_clause: str,
+    extra_params: tuple = (),
+) -> int:
+    row = query_single(f"""
+        SELECT COUNT(*) AS activity_count
+        FROM TASK t
+        WHERE t.proj_id = ?
+          AND {task_type_clause}
+          {status_clause}
+          {extra_clause}
+    """, (project_id, *extra_params))
+    return int((row or {}).get("activity_count") or 0)
 
 
 def _load_tasks(project_id: int) -> dict[int, dict]:
@@ -740,7 +762,7 @@ def get_longest_path(
     project_id: int,
     float_path: int | None = None,
     include_completed: bool = False,
-    top_n: int = 200,
+    top_n: int = 1000,
 ) -> dict:
     """Return the P6-calculated longest path activities in path order.
 
@@ -748,28 +770,38 @@ def get_longest_path(
     metadata, then falls back to minimum total float only when path metadata is
     absent.
     """
-    top_n = _limit(top_n)
+    top_n = _chain_limit(top_n)
     status_clause = _status_clause(include_completed)
     task_type_clause = schedule_task_type_condition("t")
     project = _project_settings(project_id)
     method = ""
     confidence = "p6_calculated"
+    available_activity_count = 0
 
     if float_path is not None:
+        extra_clause = "AND t.float_path = ?"
+        extra_params = (int(float_path),)
+        available_activity_count = _path_count(
+            project_id, task_type_clause, status_clause, extra_clause, extra_params
+        )
         sql = _path_select().format(
             top_n=top_n,
             task_type_clause=task_type_clause,
             status_clause=status_clause,
-            extra_clause="AND t.float_path = ?",
+            extra_clause=extra_clause,
         )
-        rows = query(sql, (project_id, int(float_path)))
+        rows = query(sql, (project_id, *extra_params))
         method = f"float_path={float_path}"
     else:
+        extra_clause = "AND t.driving_path_flag = 'Y'"
+        available_activity_count = _path_count(
+            project_id, task_type_clause, status_clause, extra_clause
+        )
         sql = _path_select().format(
             top_n=top_n,
             task_type_clause=task_type_clause,
             status_clause=status_clause,
-            extra_clause="AND t.driving_path_flag = 'Y'",
+            extra_clause=extra_clause,
         )
         rows = query(sql, (project_id,))
         method = "driving_path_flag"
@@ -785,13 +817,18 @@ def get_longest_path(
                 ORDER BY CASE WHEN t.float_path = 1 THEN 0 ELSE 1 END, t.float_path
             """, (project_id,))
             if selected_path and selected_path.get("float_path") is not None:
+                extra_clause = "AND t.float_path = ?"
+                extra_params = (selected_path["float_path"],)
+                available_activity_count = _path_count(
+                    project_id, task_type_clause, status_clause, extra_clause, extra_params
+                )
                 sql = _path_select().format(
                     top_n=top_n,
                     task_type_clause=task_type_clause,
                     status_clause=status_clause,
-                    extra_clause="AND t.float_path = ?",
+                    extra_clause=extra_clause,
                 )
-                rows = query(sql, (project_id, selected_path["float_path"]))
+                rows = query(sql, (project_id, *extra_params))
                 method = f"float_path={selected_path['float_path']}"
 
         if not rows:
@@ -803,17 +840,23 @@ def get_longest_path(
                   {status_clause}
             """, (project_id,))
             if min_float and min_float.get("min_float_hr_cnt") is not None:
+                extra_clause = "AND t.total_float_hr_cnt = ?"
+                extra_params = (min_float["min_float_hr_cnt"],)
+                available_activity_count = _path_count(
+                    project_id, task_type_clause, status_clause, extra_clause, extra_params
+                )
                 sql = _path_select().format(
                     top_n=top_n,
                     task_type_clause=task_type_clause,
                     status_clause=status_clause,
-                    extra_clause="AND t.total_float_hr_cnt = ?",
+                    extra_clause=extra_clause,
                 )
-                rows = query(sql, (project_id, min_float["min_float_hr_cnt"]))
+                rows = query(sql, (project_id, *extra_params))
                 method = "minimum_total_float_activities"
                 confidence = "fallback"
             else:
                 rows = []
+                available_activity_count = 0
 
     total_remaining = sum(row.get("remaining_duration_days") or 0 for row in rows)
     total_planned = sum(row.get("planned_duration_days") or 0 for row in rows)
@@ -830,6 +873,13 @@ def get_longest_path(
             "No P6 driving_path_flag or float_path data was found; this is a minimum-total-float "
             "activity set, not a P6-calculated path."
         )
+    is_truncated = available_activity_count > len(rows)
+    limit_note = None
+    if is_truncated:
+        limit_note = (
+            f"Returned {len(rows)} of {available_activity_count} path activities due to top_n={top_n}. "
+            "Request a higher top_n for the complete path."
+        )
 
     return {
         "project": project,
@@ -839,6 +889,10 @@ def get_longest_path(
         "ordering_note": ordering_note,
         "include_completed": include_completed,
         "activity_count": len(rows),
+        "returned_activity_count": len(rows),
+        "available_activity_count": available_activity_count,
+        "is_truncated": is_truncated,
+        "limit_note": limit_note,
         "total_planned_duration_days": round(total_planned, 1),
         "total_remaining_duration_days": round(total_remaining, 1),
         "path": rows,
@@ -849,7 +903,7 @@ def get_multiple_float_paths(
     project_id: int,
     include_completed: bool = False,
     max_paths: int = 10,
-    top_n_per_path: int = 100,
+    top_n_per_path: int = 1000,
 ) -> dict:
     """Return P6 multiple-float-path results grouped by float path number.
 
@@ -857,7 +911,7 @@ def get_multiple_float_paths(
     TASK.float_path_order. It does not synthesize multiple float paths.
     """
     max_paths = _limit(max_paths, default=10, maximum=50)
-    top_n_per_path = _limit(top_n_per_path, default=100, maximum=200)
+    top_n_per_path = _chain_limit(top_n_per_path, default=1000, maximum=5000)
     status_clause = _status_clause(include_completed)
     task_type_clause = schedule_task_type_condition("t")
     project = _project_settings(project_id)
@@ -924,11 +978,18 @@ def get_multiple_float_paths(
               AND t.float_path = ?
             ORDER BY COALESCE(t.float_path_order, 999999), t.early_start_date, t.task_code
         """, (project_id, path_number))
+        is_truncated = (summary.get("total_activity_count") or 0) > len(activities)
         paths.append({
             "float_path": path_number,
             "total_activity_count": summary["total_activity_count"],
             "milestone_count": summary["milestone_count"],
             "activity_count_returned": len(activities),
+            "is_truncated": is_truncated,
+            "limit_note": (
+                f"Returned {len(activities)} of {summary['total_activity_count']} activities due to "
+                f"top_n_per_path={top_n_per_path}."
+                if is_truncated else None
+            ),
             "driving_path_activity_count": summary["driving_path_activity_count"],
             "minimum_total_float_hours": summary["minimum_total_float_hours"],
             "maximum_total_float_hours": summary["maximum_total_float_hours"],
@@ -945,6 +1006,8 @@ def get_multiple_float_paths(
         "source_method": "float_path/float_path_order",
         "include_completed": include_completed,
         "path_count": len(paths),
+        "top_n_per_path": top_n_per_path,
+        "is_truncated": any(path["is_truncated"] for path in paths),
         "paths": paths,
     }
 
@@ -953,10 +1016,10 @@ def get_near_critical_paths(
     project_id: int,
     max_float_days: float = 10,
     include_negative: bool = True,
-    top_n: int = 200,
+    top_n: int = 500,
 ) -> dict:
     """Return incomplete near-critical activities grouped by P6 float path."""
-    top_n = _limit(top_n)
+    top_n = _chain_limit(top_n, default=500, maximum=5000)
     project = _project_settings(project_id)
     hours_per_day = project_hours_per_day(project)
     task_type_clause = schedule_task_type_condition("t")
@@ -967,6 +1030,16 @@ def get_near_critical_paths(
 
     lower_clause = "" if include_negative else "AND t.total_float_hr_cnt >= 0"
     max_float_hours = max_float_days * hours_per_day
+    matched = query_single(f"""
+        SELECT COUNT(*) AS activity_count
+        FROM TASK t
+        WHERE t.proj_id = ?
+          AND {task_type_clause}
+          AND t.status_code <> 'TK_Complete'
+          AND t.total_float_hr_cnt <= ?
+          {lower_clause}
+    """, (project_id, max_float_hours))
+    matched_activity_count = int((matched or {}).get("activity_count") or 0)
 
     rows = query(f"""
         SELECT TOP {top_n}
@@ -1027,6 +1100,13 @@ def get_near_critical_paths(
         "project_hours_per_day": hours_per_day,
         "include_negative": include_negative,
         "activity_count": len(rows),
+        "returned_activity_count": len(rows),
+        "matched_activity_count": matched_activity_count,
+        "is_truncated": matched_activity_count > len(rows),
+        "limit_note": (
+            f"Returned {len(rows)} of {matched_activity_count} near-critical activities due to top_n={top_n}."
+            if matched_activity_count > len(rows) else None
+        ),
         "path_count": len(paths),
         "paths": sorted(paths, key=lambda p: (p["minimum_float_days"], p["path_key"])),
     }
@@ -1036,12 +1116,12 @@ def get_path_to_milestone(
     project_id: int,
     milestone_task_code: str,
     include_completed: bool = True,
-    max_depth: int = 20,
-    top_n: int = 200,
+    max_depth: int = 100,
+    top_n: int = 5000,
 ) -> dict:
     """Trace all predecessor logic back from a milestone or target activity."""
-    top_n = _limit(top_n)
-    max_depth = _limit(max_depth, default=20, maximum=100)
+    top_n = _chain_limit(top_n, default=5000)
+    max_depth = _chain_limit(max_depth, default=100)
     tasks = _load_tasks(project_id)
     target = next((
         row for row in tasks.values()
@@ -1066,13 +1146,23 @@ def get_path_to_milestone(
     path_rows = []
     queue = [(target["task_id"], 0)]
     expanded: set[int] = set()
+    truncated_by_row_limit = False
+    max_depth_nodes = []
 
     while queue and len(path_rows) < top_n:
         successor_id, depth = queue.pop(0)
-        if successor_id in expanded or depth >= max_depth:
+        if successor_id in expanded:
+            continue
+        successor = tasks.get(successor_id)
+        if depth >= max_depth:
+            max_depth_nodes.append({
+                "task_code": successor["task_code"] if successor else None,
+                "task_name": successor["task_name"] if successor else None,
+                "depth": depth,
+                "reason": "max_depth_reached",
+            })
             continue
         expanded.add(successor_id)
-        successor = tasks.get(successor_id)
 
         rels = by_successor.get(successor_id, [])
         for rel in rels:
@@ -1108,9 +1198,30 @@ def get_path_to_milestone(
                 "lag_days_8h": rel["lag_days_8h"],
             })
             if len(path_rows) >= top_n:
+                truncated_by_row_limit = True
                 break
             if next_depth < max_depth:
                 queue.append((predecessor["task_id"], next_depth))
+            else:
+                max_depth_nodes.append({
+                    "task_code": predecessor["task_code"],
+                    "task_name": predecessor["task_name"],
+                    "depth": next_depth,
+                    "reason": "max_depth_reached",
+                })
+
+    trace_complete = not truncated_by_row_limit and not max_depth_nodes and not queue
+    truncation_note = None
+    if truncated_by_row_limit:
+        truncation_note = (
+            f"Trace stopped after {len(path_rows)} predecessor rows due to top_n={top_n}. "
+            "Request a higher top_n to continue the chain."
+        )
+    elif max_depth_nodes:
+        truncation_note = (
+            f"Trace reached max_depth={max_depth} at {len(max_depth_nodes)} node(s). "
+            "Request a higher max_depth to continue the chain."
+        )
 
     return {
         "target": {
@@ -1119,7 +1230,14 @@ def get_path_to_milestone(
         },
         "include_completed": include_completed,
         "max_depth": max_depth,
+        "top_n": top_n,
         "predecessor_count": len(path_rows),
+        "trace_complete": trace_complete,
+        "truncated_by_row_limit": truncated_by_row_limit,
+        "truncated_by_depth": bool(max_depth_nodes),
+        "unexpanded_queue_count": len(queue),
+        "max_depth_nodes": max_depth_nodes[:20],
+        "truncation_note": truncation_note,
         "target_included_in_path": False,
         "sort_basis": "schedule_start_then_activity_code",
         "path": sorted(path_rows, key=_schedule_path_sort_key),
@@ -1129,8 +1247,8 @@ def get_path_to_milestone(
 def get_driving_predecessors(
     project_id: int,
     task_code: str,
-    max_depth: int = 3,
-    top_n: int = 100,
+    max_depth: int = 10,
+    top_n: int = 1000,
     date_basis: str = "status",
     calendar_basis: str = "successor",
     include_completed: bool = False,
@@ -1142,8 +1260,8 @@ def get_driving_predecessors(
     successor endpoint, using the selected work calendar basis. The tightest
     predecessor(s), especially zero-gap relationships, are the likely drivers.
     """
-    top_n = _limit(top_n, default=100)
-    max_depth = _limit(max_depth, default=3, maximum=25)
+    top_n = _chain_limit(top_n)
+    max_depth = _chain_limit(max_depth, default=10)
     tasks = _load_tasks(project_id)
     project_calendar = _load_project_calendar(project_id)
     target = next((
@@ -1160,10 +1278,19 @@ def get_driving_predecessors(
     rows = []
     queue = deque([(target["task_id"], 0)])
     visited: set[tuple[int, int]] = set()
+    truncated_by_row_limit = False
+    max_depth_nodes = []
 
     while queue and len(rows) < top_n:
         successor_id, depth = queue.popleft()
         if depth >= max_depth:
+            successor = tasks.get(successor_id)
+            max_depth_nodes.append({
+                "task_code": successor["task_code"] if successor else None,
+                "task_name": successor["task_name"] if successor else None,
+                "depth": depth,
+                "reason": "max_depth_reached",
+            })
             continue
         successor = tasks.get(successor_id)
         if not successor:
@@ -1186,13 +1313,34 @@ def get_driving_predecessors(
             rel_row["depth"] = depth + 1
             rows.append(rel_row)
             if len(rows) >= top_n:
+                truncated_by_row_limit = True
                 break
-            queue.append((rel_row["predecessor_id"], depth + 1))
+            if depth + 1 < max_depth:
+                queue.append((rel_row["predecessor_id"], depth + 1))
+            else:
+                max_depth_nodes.append({
+                    "task_code": rel_row["task_code"],
+                    "task_name": rel_row["task_name"],
+                    "depth": depth + 1,
+                    "reason": "max_depth_reached",
+                })
 
     safe_target = {
         key: value for key, value in target.items()
         if not key.endswith("_dt") and key != "calendar_data"
     }
+    trace_complete = not truncated_by_row_limit and not max_depth_nodes and not queue
+    truncation_note = None
+    if truncated_by_row_limit:
+        truncation_note = (
+            f"Candidate predecessor trace stopped after {len(rows)} rows due to top_n={top_n}. "
+            "Request a higher top_n or use get_driving_path_to_activity for a focused driver chain."
+        )
+    elif max_depth_nodes:
+        truncation_note = (
+            f"Candidate predecessor trace reached max_depth={max_depth} at {len(max_depth_nodes)} node(s). "
+            "Request a higher max_depth to continue the chain."
+        )
     return {
         "target": safe_target,
         "method": "inferred_calendar_aware_relationship_gap",
@@ -1204,7 +1352,14 @@ def get_driving_predecessors(
         "include_completed": include_completed,
         "tolerance_hours": tolerance_hours,
         "max_depth": max_depth,
+        "top_n": top_n,
         "predecessor_count": len(rows),
+        "trace_complete": trace_complete,
+        "truncated_by_row_limit": truncated_by_row_limit,
+        "truncated_by_depth": bool(max_depth_nodes),
+        "unexpanded_queue_count": len(queue),
+        "max_depth_nodes": max_depth_nodes[:20],
+        "truncation_note": truncation_note,
         "candidate_driving_predecessors": sorted(
             rows,
             key=lambda r: (r["depth"], *_relationship_gap_sort_key(r)),
@@ -1215,8 +1370,8 @@ def get_driving_predecessors(
 def get_driving_path_to_activity(
     project_id: int,
     task_code: str,
-    max_depth: int = 20,
-    top_n: int = 200,
+    max_depth: int = 100,
+    top_n: int = 1000,
     date_basis: str = "status",
     calendar_basis: str = "successor",
     include_completed: bool = False,
@@ -1228,8 +1383,8 @@ def get_driving_path_to_activity(
     based on calendar-aware relationship gap. Multiple equal drivers are kept as
     branches.
     """
-    top_n = _limit(top_n)
-    max_depth = _limit(max_depth, default=20, maximum=100)
+    top_n = _chain_limit(top_n)
+    max_depth = _chain_limit(max_depth, default=100)
     tasks = _load_tasks(project_id)
     project_calendar = _load_project_calendar(project_id)
     target = next((
@@ -1256,10 +1411,19 @@ def get_driving_path_to_activity(
     queue = deque([(target["task_id"], 0)])
     visited_edges: set[tuple[int, int]] = set()
     terminal_nodes = []
+    truncated_by_row_limit = False
+    max_depth_nodes = []
 
     while queue and len(path_rows) < top_n:
         successor_id, depth = queue.popleft()
         if depth >= max_depth:
+            successor = tasks.get(successor_id)
+            max_depth_nodes.append({
+                "task_code": successor["task_code"] if successor else None,
+                "task_name": successor["task_name"] if successor else None,
+                "reason": "max_depth_reached",
+                "depth": depth,
+            })
             continue
         successor = tasks.get(successor_id)
         if not successor:
@@ -1294,13 +1458,34 @@ def get_driving_path_to_activity(
             rel_row["depth_from_target"] = depth + 1
             path_rows.append(rel_row)
             if len(path_rows) >= top_n:
+                truncated_by_row_limit = True
                 break
-            queue.append((rel_row["predecessor_id"], depth + 1))
+            if depth + 1 < max_depth:
+                queue.append((rel_row["predecessor_id"], depth + 1))
+            else:
+                max_depth_nodes.append({
+                    "task_code": rel_row["task_code"],
+                    "task_name": rel_row["task_name"],
+                    "reason": "max_depth_reached",
+                    "depth": depth + 1,
+                })
 
     safe_target = {
         key: value for key, value in target.items()
         if not key.endswith("_dt") and key != "calendar_data"
     }
+    trace_complete = not truncated_by_row_limit and not max_depth_nodes and not queue
+    truncation_note = None
+    if truncated_by_row_limit:
+        truncation_note = (
+            f"Driving path trace stopped after {len(path_rows)} relationship rows due to top_n={top_n}. "
+            "Request a higher top_n to continue the chain."
+        )
+    elif max_depth_nodes:
+        truncation_note = (
+            f"Driving path trace reached max_depth={max_depth} at {len(max_depth_nodes)} node(s). "
+            "Request a higher max_depth to continue the chain."
+        )
     return {
         "target": safe_target,
         "method": "inferred_recursive_calendar_aware_relationship_gap",
@@ -1312,8 +1497,15 @@ def get_driving_path_to_activity(
         "include_completed": include_completed,
         "tolerance_hours": tolerance_hours,
         "max_depth": max_depth,
+        "top_n": top_n,
         "path_edge_count": len(path_rows),
+        "trace_complete": trace_complete,
+        "truncated_by_row_limit": truncated_by_row_limit,
+        "truncated_by_depth": bool(max_depth_nodes),
+        "unexpanded_queue_count": len(queue),
         "sort_basis": "schedule_start_then_activity_code",
         "terminal_nodes": terminal_nodes,
+        "max_depth_nodes": max_depth_nodes[:20],
+        "truncation_note": truncation_note,
         "driving_path": sorted(path_rows, key=_schedule_path_sort_key),
     }

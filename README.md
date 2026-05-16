@@ -377,11 +377,13 @@ trusted local clients and least-privilege credentials.
   `TASK.float_path_order`. They do not synthesize multiple float paths if P6 has
   not calculated them.
 - Longest path tools prefer P6-calculated fields where present, then use
-  documented fallbacks.
+  documented fallbacks. Path tools return truncation/completeness metadata when
+  a row or depth guardrail prevents returning the full path.
 - Driving predecessor/path tools infer relationship tightness from predecessor
   endpoint dates, successor endpoint dates, relationship type, lag, and parsed
   work calendars. P6 does not expose a relationship-level driving flag in
-  `TASKPRED`.
+  `TASKPRED`. Recursive driver traces are designed to continue back toward the
+  active/current work unless a reported row or depth guardrail stops the trace.
 - Activity code tools support both global (`AS_Global`) and project-scoped
   (`AS_Project`) code types where those codes are assigned to project
   activities.
